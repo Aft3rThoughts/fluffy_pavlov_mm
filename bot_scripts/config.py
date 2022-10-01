@@ -20,7 +20,7 @@ config = {
         '5v5': {
             'player_count': 10,
             'channel': '5v5-queue',
-            'maps': ['Sand', 'Museum', 'Stockpile', 'Oilrig', 'Cache', 'Mirage', 'Dust 2', 'Seaside', 'Stahlbrecher', 'Reachsky', 'Overpass', 'Manor'],
+            'maps': ['Vertigo', 'Harbor', 'Santorini', 'Oilrig', 'Cache', 'Mirage', 'Dust 2', 'WhiteSand', 'Amigo', 'Inferno', 'Overpass'],
         },
         '2v2': {
             'player_count': 4,
