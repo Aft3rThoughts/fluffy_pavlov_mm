@@ -9,13 +9,19 @@ from .database import Database
 
 class BotData:
     def __init__(self):
+        self.client = None
         self.guild = None
         self.matches_category = None
         self.emotes = {}
         self.active_matches = []
         self.db = Database(read_f('dbpass.txt').replace('\n', ''))
+        self.refresh_ping_rules()
         self.rank_roles = {}
         self.queues = None
+        self.duo_invites = []
+
+    def refresh_ping_rules(self):
+        self.ping_rules = self.db.get_ping_rules()
 
     def get_users_in_matches(self):
         user_ids = []
@@ -38,7 +44,8 @@ class BotData:
         random.shuffle(map_set)
         return map_set[:count]
 
-    def load(self, guild):
+    def load(self, client, guild):
+        self.client = client
         self.guild = guild
 
         self.queues = Queues(self)

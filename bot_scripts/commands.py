@@ -1,11 +1,14 @@
+import time
 import sys
 
 import discord
 
 from .user import User
+from .duo_invite import DuoInvite
 from .bot_data import bot_data
 from .config import config
 from .util import calc_rank
+from .pings import ready_pings
 
 commands = {}
 
@@ -44,9 +47,23 @@ async def ready(message, args):
             except ValueError:
                 pass
 
-        join_success = bot_data.queues.join_queue(User(bot_data, message.author), queue_id, ready_dur)
+        target_user = User(bot_data, message.author)
+        if target_user.banned:
+            await message.channel.send('Failed to join queue. Your account has been banned from readying up for the next ' + str(int((target_user.ban_until - time.time()) / 60) + 1) + ' minutes.')
+            return None
+
+        duo_msg = ''
+        for duo in queue.duos:
+            if message.author.id in duo:
+                matching_partners = await message.guild.query_members(user_ids=duo[abs(duo.index(message.author.id) - 1)])
+                if len(matching_partners):
+                    duo_partner = matching_partners[0].name
+                    duo_msg = ' Attempting duo with ' + duo_partner + '.'
+
+        join_success = bot_data.queues.join_queue(target_user, queue_id, ready_dur)
         if join_success:
-            await message.channel.send(message.author.display_name + ' joined the ' + queue.id + ' queue (' + str(ready_dur) + ' mins). ' + str(queue.player_count) + ' players in queue.')
+            await ready_pings(bot_data.queues.queues[queue_id])
+            await message.channel.send(message.author.display_name + ' joined the ' + queue.id + ' queue (' + str(ready_dur) + ' mins). ' + str(queue.player_count) + ' players in queue.' + duo_msg)
         else:
             await message.channel.send('Failed to join queue. Please finish any existing games and leave all other queues.')
 
@@ -84,6 +101,70 @@ async def stats(message, args):
         await message.channel.send(message_text)
 
 @reg_command
+async def aroundme(message, args):
+    queue_id = bot_data.queues.find_channel_queue(message.channel.id)
+
+    user = User(bot_data, message.author)
+    nearby_users = user.get_nearby_users(queue_id)
+
+    message_text = '```'
+    for user in nearby_users:
+        message_text += '#' + str(user['rank'])  + ': ' + user['name'] + ' - ' + str(round(user['queue_stats'][queue_id]['mmr'] if queue_id in user['queue_stats'] else 0.0, 1)) + '\n'
+    if message_text[-1] == '\n':
+        message_text = message_text[:-1]
+    message_text += '```'
+
+    await message.channel.send(message_text)
+
+@reg_command
+async def pingme(message, args):
+    queue_id = bot_data.queues.find_channel_queue(message.channel.id)
+
+    try:
+        threshold = int(args[1])
+    except:
+        await message.channel.send('Please specify a player count threshold. Set 0 to disable.')
+        return
+
+    bot_data.db.db['ping_rules'].update_one({'_id': message.author.id}, {'$set': {'player_threshold.' + queue_id: threshold}}, upsert=True)
+    bot_data.refresh_ping_rules()
+    if threshold == 0:
+        await message.channel.send('Removed your ping threshold for the `' + queue_id + '` queue.')
+    else:
+        await message.channel.send('Set your ping threshold for the `' + queue_id + '` queue to `' + str(threshold) + '`.')
+
+@reg_command
+async def duoinvite(message, args):
+    queue_id = bot_data.queues.find_channel_queue(message.channel.id)
+    if queue_id:
+        if len(message.mentions):
+            invite_initiator = User(bot_data, message.author)
+            invite_target = User(bot_data, message.mentions[0])
+
+            if (invite_initiator.get_mmr(queue_id) > config['duo_limit']) or (invite_target.get_mmr(queue_id) > config['duo_limit']):
+                await message.channel.send('Both players must be below the duo mmr limit of ' + str(config['duo_limit']) + ' to duo.')
+                return None
+
+            new_invite = DuoInvite(bot_data, queue_id, message, invite_initiator, invite_target)
+            await new_invite.generate()
+            bot_data.duo_invites.append(new_invite)
+        else:
+            await message.channel.send('Please mention the user you would like to invite.')
+
+@reg_command
+async def duoleave(message, args):
+    queue_id = bot_data.queues.find_channel_queue(message.channel.id)
+    if queue_id:
+        queue = bot_data.queues.queues[queue_id]
+        print(queue.duos)
+        for duo in queue.duos[::-1]:
+            if message.author.id in duo:
+                queue.duos.remove(duo)
+        print(queue.duos)
+
+        await message.channel.send(message.author.name + ' left all duos in this queue.')
+
+@reg_command
 async def clear_matches(message, args):
     if message.channel.name == config['admin_commands_channel']:
         for channel in bot_data.matches_category.channels:
@@ -108,7 +189,25 @@ async def nullify(message, args):
         match_id = int(args[1])
         match = bot_data.get_match(match_id)
         await match.clear()
+        match.completed = True
         await message.channel.send('nullified match `' + str(match_id) + '`.')
+
+@reg_command
+async def temp_ban(message, args):
+    if message.channel.name == config['admin_commands_channel']:
+        ban_duration = int(args[1])
+        if len(message.mentions):
+            target_user = User(bot_data, message.mentions[0])
+            target_user.ban(ban_duration)
+            await message.channel.send('temp banned ' + target_user.name + ' for ' + str(ban_duration) + ' minutes.')
+
+@reg_command
+async def unban(message, args):
+    if message.channel.name == config['admin_commands_channel']:
+        if len(message.mentions):
+            target_user = User(bot_data, message.mentions[0])
+            target_user.ban(-1)
+            await message.channel.send('unbanned ' + target_user.name + '.')
 
 #aliases
 commands['cm'] = commands['clear_matches']
@@ -117,3 +216,4 @@ commands['ur'] = commands['unready']
 commands['in'] = commands['inqueue']
 commands['s'] = commands['stats']
 commands['sb'] = commands['stop_bot']
+commands['am'] = commands['aroundme']

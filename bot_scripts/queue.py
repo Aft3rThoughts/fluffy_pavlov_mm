@@ -57,6 +57,7 @@ class Queue:
         self.match_player_count = match_player_count
         self.users = []
         self.creating_match = False
+        self.duos = []
 
     @property
     def player_count(self):
@@ -74,7 +75,7 @@ class Queue:
         self.creating_match = True
 
         while len(self.users) >= self.match_player_count:
-            teams, mmr_diff = generate_teams(self.users[:10], self.id)
+            teams, mmr_diff = generate_teams(self.users[:10], self.id, self.duos)
             for team in teams:
                 for user in team:
                     self.users.remove(user)
@@ -84,8 +85,9 @@ class Queue:
         self.creating_match = False
 
     def add_user(self, user, duration):
-        if user.id in self.user_ids:
-            self.remove_user(user)
+        if not self.bot_data.queues.debug_mode:
+            if user.id in self.user_ids:
+                self.remove_user(user)
 
         self.users.append(user)
         user.queue_expire = time.time() + duration * 60

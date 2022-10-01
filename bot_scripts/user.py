@@ -1,3 +1,5 @@
+import time
+
 from .config import config
 
 class User:
@@ -11,6 +13,12 @@ class User:
         self.queue_expire = 0
 
         self.refresh()
+
+    @property
+    def banned(self):
+        if (time.time() < self.ban_until) and (self.ban_until != 0):
+            return True
+        return False
 
     def refresh(self):
         json_data = self.bot_data.db.get_user(self.discord_user)
@@ -33,5 +41,13 @@ class User:
         self.queue_stats[queue_id]['mmr'] += change
         self.save()
 
+    def ban(self, duration):
+        self.refresh()
+        self.ban_until = time.time() + duration * 60
+        self.save()
+
     def get_stats(self, queue_id):
         return self.bot_data.db.get_user_history(self, queue_id)
+
+    def get_nearby_users(self, queue_id):
+        return self.bot_data.db.get_nearby_users(self, queue_id)

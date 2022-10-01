@@ -21,7 +21,7 @@ async def on_ready():
     for guild in client.guilds:
         if guild.name == guild_id:
             print('found matching guild!')
-            bot_data.load(guild)
+            bot_data.load(client, guild)
             #bot_data.queues.debug_mode = True
 
     print('Connected to Discord!')
@@ -30,19 +30,22 @@ async def on_ready():
 
 @client.event
 async def on_message(message):
-    if message.content[0] == '!':
-        base_cmd = message.content.split(' ')[0][1:]
-        if base_cmd in commands:
-            await commands[base_cmd](message, message.content.split(' '))
+    if len(message.content):
+        if message.content[0] == '!':
+            base_cmd = message.content.split(' ')[0][1:].lower()
+            if base_cmd in commands:
+                await commands[base_cmd](message, message.content.split(' '))
 
-        for match in bot_data.active_matches:
-            await match.process_message(message)
+            for match in bot_data.active_matches:
+                await match.process_message(message)
 
 @client.event
 async def on_reaction_add(reaction, user):
     if reaction.message.channel.category == bot_data.matches_category:
         for match in bot_data.active_matches:
             await match.process_reaction(reaction, user)
+    for duo_invite in bot_data.duo_invites:
+        await duo_invite.process_reaction(reaction, user)
 
 @tasks.loop(seconds=1)
 async def regular_tasks():
@@ -60,6 +63,11 @@ async def regular_tasks():
         else:
             activity = discord.Game(name=str(biggest_queue[1]) + ' player in ' + biggest_queue[0])
         await client.change_presence(activity=activity)
+
+    for duo_invite in bot_data.duo_invites[::-1]:
+        await duo_invite.tick()
+        if duo_invite.resolved:
+            bot_data.duo_invites.remove(duo_invite)
 
     if bot_data.queues:
         await bot_data.queues.tick()
